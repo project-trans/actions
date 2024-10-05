@@ -1,0 +1,61 @@
+name: 发送预览链接到评论区
+
+on:
+  workflow_call:
+    inputs:
+      previewUrl:
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 使用 GitHub App 进行身份验证
+        id: auth
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_SECRET }}
+          owner: ${{ github.repository_owner }}
+      # 获取预览链接并发送到 PR
+      - name: 发送整体 PR review
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ steps.auth.outputs.token }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const previewUrl = "${{ inputs.previewUrl }}";
+            const reviewBody = `🚀 预览部署完成！ 访问链接: ${previewUrl}`;
+
+            // 获取现有 review
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            // 查找已有的评论 review
+            const existingReview = reviews.find(review =>
+              review.body.includes('🚀 预览部署完成！'));
+
+            if (existingReview) {
+              // 如果已经有 review，更新它
+              await github.rest.pulls.updateReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                review_id: existingReview.id,
+                body: reviewBody,
+              });
+            } else {
+              // 如果没有 review，创建新的 review
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                body: reviewBody,
+                event: "COMMENT",
+              });
+            }
+
