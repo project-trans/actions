@@ -6,6 +6,9 @@ on:
       previewUrl:
         required: true
         type: string
+      pageUrls:
+        required: false
+        type: string
 
 jobs:
   deploy:
@@ -26,7 +29,8 @@ jobs:
           script: |
             const prNumber = context.payload.pull_request.number;
             const previewUrl = "${{ inputs.previewUrl }}";
-            const reviewBody = `🚀 预览部署完成！ 访问链接: ${previewUrl}`;
+            const pageUrls = "${{ inputs.pageUrls }}";
+            const reviewBody = `🚀 预览部署完成！访问链接: ${previewUrl}\n\n✨本 PR 修改了以下页面:✨${pageUrls}`;
 
             // 获取现有 review
             const { data: reviews } = await github.rest.pulls.listReviews({
