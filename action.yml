@@ -1,0 +1,97 @@
+name: 'pr preview action'
+description: 'Generate and post a preview URL as a PR comment.'
+branding:
+  icon: 'award'
+  color: 'green'
+
+inputs:
+  previewUrl:
+    required: true
+  BOT_APP_ID:
+    required: true
+  BOT_APP_SECRET:
+    required: true
+  GITHUB_TOKEN:
+    required: true
+  REMOVE_PREFIX:
+    required: false
+  REMOVE_SUFFIX:
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: 使用 GitHub App 进行身份验证
+      id: auth
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.BOT_APP_ID }}
+        private-key: ${{ inputs.BOT_APP_SECRET }}
+        owner: ${{ github.repository_owner }}
+      
+    - name: List PR files using GitHub CLI
+      id: url
+      run: |
+          # 使用 GitHub CLI 获取 PR 文件列表并提取文件路径
+          files=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files \
+            | jq -r '.[].filename')  # 使用 -r 获取原始文本输出
+
+          # 处理文件路径，拼接成完整的 URL
+          for file in $files; do
+            if [[ $file == *.md ]]; then
+              # 去掉路径前缀和后缀
+              modified_file="${file#${{ inputs.REMOVE_PREFIX }}}"   # 删除路径前缀
+              modified_file="${modified_file%${{ inputs.REMOVE_SUFFIX }}}"  # 删除路径后缀
+
+              # 拼接 URL
+              file_url="${{ inputs.previewUrl }}${modified_file}"
+              all_file_urls="${all_file_urls}\n${file_url}"
+            fi
+          done
+          echo "all_file_urls=${all_file_urls}" >> $GITHUB_ENV
+          echo -e "All File URLs: ${{ env.all_file_urls }}"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+
+    # 获取预览链接并发送到 PR
+    - name: 发送整体 PR review
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ steps.auth.outputs.token }}
+        script: |
+          const prNumber = context.payload.pull_request.number;
+          const reviewBody = `🚀 预览部署完成！访问链接: ${{ inputs.previewUrl }}\n\n✨ 本 PR 修改了以下页面: ✨${{ env.all_file_urls }}`;
+
+          // 获取现有 review
+          const { data: reviews } = await github.rest.pulls.listReviews({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: prNumber,
+          });
+
+          // 查找已有的评论 review
+          const existingReview = reviews.find(review =>
+            review.body.includes('🚀 预览部署完成！'));
+
+          if (existingReview) {
+            // 如果已经有 review，更新它
+            await github.rest.pulls.updateReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              review_id: existingReview.id,
+              body: reviewBody,
+            });
+          } else {
+            // 如果没有 review，创建新的 review
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              body: reviewBody,
+              event: "COMMENT",
+            });
+          }
