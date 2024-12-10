@@ -51,7 +51,6 @@ runs:
             fi
           done
           echo "all_file_urls=${all_file_urls}" >> $GITHUB_ENV
-          echo -e "All File URLs: ${{ env.all_file_urls }}"
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.GITHUB_TOKEN }}
